@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
@@ -46,26 +47,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 px-4 py-12">
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 shadow-xl rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-8 sm:p-10">
+    <div className="min-h-screen flex items-center justify-center bg-[#F8FAF8] px-4 py-12">
+      <div className="w-full max-w-md bg-white shadow-xl rounded-2xl border border-[#E5EAE7] p-8 sm:p-10">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white font-bold text-xl shadow-md shadow-blue-500/20 mb-4">
-            M
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <div className="text-center mb-8 flex flex-col items-center">
+          <Link href="/" className="relative h-9 w-32 mb-4 block">
+            <Image
+              src="/logo.png"
+              alt="Metron Logo"
+              fill
+              priority
+              className="object-contain"
+            />
+          </Link>
+          <h1 className="text-xl font-bold tracking-tight text-[#0D1F14]">
             Welcome back
           </h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Enter your credentials to access your dashboard
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Sign in to access your AI spreadsheets and dashboards
           </p>
         </div>
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 flex items-start space-x-3 text-red-700 dark:text-red-300 text-sm animate-in fade-in duration-200">
+          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start space-x-3 text-red-700 text-xs animate-in fade-in duration-200">
             <svg
-              className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500"
+              className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -82,32 +89,30 @@ export default function LoginPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label
               htmlFor="email"
-              className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5"
+              className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-600 mb-1.5"
             >
               Email address
             </label>
-            <div className="relative">
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
-              />
-            </div>
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-[#D9E2DC] bg-[#FAFBF9] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0D361C]/20 focus:border-[#0D361C] transition-all text-xs"
+            />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label
                 htmlFor="password"
-                className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300"
+                className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-600"
               >
                 Password
               </label>
@@ -120,17 +125,17 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-4 py-3 pr-11 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
+                className="w-full px-3.5 py-2.5 pr-11 rounded-xl border border-[#D9E2DC] bg-[#FAFBF9] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0D361C]/20 focus:border-[#0D361C] transition-all text-xs"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-600"
                 tabIndex={-1}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -139,7 +144,7 @@ export default function LoginPage() {
                     />
                   </svg>
                 ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -161,7 +166,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center py-3 px-4 rounded-xl text-white font-medium bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-blue-500/20 transition-all text-sm mt-2 cursor-pointer"
+            className="w-full flex items-center justify-center py-2.5 px-4 rounded-xl text-white font-semibold bg-[#0D361C] hover:bg-[#144D28] active:bg-[#082211] disabled:opacity-60 disabled:cursor-not-allowed shadow-xs transition-all text-xs mt-2 cursor-pointer"
           >
             {loading ? (
               <span className="inline-flex items-center gap-2">
@@ -193,12 +198,12 @@ export default function LoginPage() {
         </form>
 
         {/* Footer */}
-        <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="mt-8 pt-5 border-t border-zinc-100 text-center">
+          <p className="text-xs text-zinc-500">
             Don&apos;t have an account?{' '}
             <Link
               href="/signup"
-              className="font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline underline-offset-4"
+              className="font-semibold text-[#0D361C] hover:underline"
             >
               Sign up
             </Link>
