@@ -9,8 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/genai": "^3.2.0",
+    "@handsontable/react": "^16.2.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
+    "handsontable": "^18.1.2",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
