@@ -178,7 +178,7 @@ export default function Sidebar({
                   M
                 </div>
                 <div className="truncate">
-                  <div className="text-xs font-semibold text-zinc-900 truncate">
+                  <div className="text-xs font-semibold text-zinc-900 truncate" title={userEmail || undefined}>
                     {userName}&apos;s Workspace
                   </div>
                   <div className="text-[10px] text-zinc-500 flex items-center gap-1">
@@ -197,6 +197,18 @@ export default function Sidebar({
               </svg>
             </div>
           </div>
+
+          {onNewSpreadsheet && (
+            <div className="px-3 pb-2">
+              <button
+                type="button"
+                onClick={onNewSpreadsheet}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0D361C] text-white hover:bg-[#144D28] transition-colors shadow-2xs cursor-pointer"
+              >
+                <span>+ New Spreadsheet</span>
+              </button>
+            </div>
+          )}
 
           {/* Navigation Links */}
           <nav className="px-3 py-1 space-y-0.5">

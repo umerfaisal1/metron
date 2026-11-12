@@ -194,17 +194,37 @@ Rules:
 }
 
 export async function modifySpreadsheetWithGemini(
-  current: { title: string; columns: any[]; data: any[][]; metadata?: any },
+  current: {
+    title: string
+    columns: Array<{ title: string; type?: string; width?: number; source?: string[] }>
+    data: Array<Array<string | number | boolean>>
+    metadata?: Record<string, unknown>
+  },
   instruction: string
 ): Promise<GeneratedSpreadsheet> {
+  const mappedColumns = (current.columns || []).map((c) => ({
+    title: c.title || 'Column',
+    type: (c.type === 'numeric' || c.type === 'dropdown' ? c.type : 'text') as 'text' | 'numeric' | 'dropdown',
+    source: c.source,
+    width: c.width,
+  }))
+
+  const mappedMetadata = current.metadata
+    ? {
+        prompt: String(current.metadata.prompt || instruction),
+        category: typeof current.metadata.category === 'string' ? current.metadata.category : undefined,
+        notes: typeof current.metadata.notes === 'string' ? current.metadata.notes : undefined,
+      }
+    : undefined
+
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     return {
       title: current.title,
       summary: 'Modified based on: ' + instruction,
-      columns: current.columns,
+      columns: mappedColumns,
       data: current.data,
-      metadata: current.metadata,
+      metadata: mappedMetadata,
     }
   }
 
@@ -268,8 +288,8 @@ Rules:
   return {
     title: current.title,
     summary: 'Could not apply change: ' + instruction,
-    columns: current.columns,
+    columns: mappedColumns,
     data: current.data,
-    metadata: current.metadata,
+    metadata: mappedMetadata,
   }
 }
