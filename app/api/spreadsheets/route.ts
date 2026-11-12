@@ -1,13 +1,30 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// GET: list all spreadsheets for user or recently created
-export async function GET() {
+// GET: list all spreadsheets or get single spreadsheet by ?id=...
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
     const supabase = await createClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
+
+    if (id) {
+      const { data, error } = await supabase
+        .from('spreadsheets')
+        .select('id, title, prompt, columns, data, metadata, created_at, updated_at')
+        .eq('id', id)
+        .single()
+
+      if (error || !data) {
+        return NextResponse.json({ error: error?.message || 'Spreadsheet not found' }, { status: 404 })
+      }
+
+      return NextResponse.json({ spreadsheet: data })
+    }
 
     let query = supabase
       .from('spreadsheets')

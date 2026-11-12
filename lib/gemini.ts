@@ -192,3 +192,84 @@ Rules:
   console.info('Falling back to local template generator')
   return generateLocalFallback(prompt)
 }
+
+export async function modifySpreadsheetWithGemini(
+  current: { title: string; columns: any[]; data: any[][]; metadata?: any },
+  instruction: string
+): Promise<GeneratedSpreadsheet> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    return {
+      title: current.title,
+      summary: 'Modified based on: ' + instruction,
+      columns: current.columns,
+      data: current.data,
+      metadata: current.metadata,
+    }
+  }
+
+  const ai = new GoogleGenAI({ apiKey })
+
+  const systemInstruction = `You are Metron AI, an expert spreadsheet engine.
+The user wants to modify their existing spreadsheet with an instruction.
+You are given the current spreadsheet title, columns, and data, along with the user's edit instruction.
+Apply the edit instruction carefully (e.g. adding new columns, updating cells, computing formulas, adding rows, etc.) and return the updated spreadsheet structure.
+
+JSON Output Schema:
+{
+  "title": "Spreadsheet Title (keep or update)",
+  "summary": "Brief 1-sentence description of the change",
+  "columns": [
+    { "title": "Column Name", "type": "text" | "numeric" | "dropdown", "source": ["Opt1", "Opt2"] }
+  ],
+  "data": [
+    [cellValue1, cellValue2, ...]
+  ],
+  "metadata": { "notes": "Explanation of changes made" }
+}
+
+Rules:
+1. Every row in "data" must match the length and order of "columns".
+2. Keep existing data intact unless the user explicitly requested modifications or deletions.
+3. Return raw valid JSON only.`
+
+  const candidateModels = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-2.5-pro']
+
+  const payload = {
+    title: current.title,
+    columns: current.columns,
+    sampleData: current.data.slice(0, 30),
+    instruction,
+  }
+
+  for (const model of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: `Current Spreadsheet State:\n${JSON.stringify(payload)}\n\nUser Instruction: "${instruction}"`,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+        },
+      })
+
+      const text = response.text?.trim()
+      if (text) {
+        const parsed = JSON.parse(text) as GeneratedSpreadsheet
+        if (parsed.columns && Array.isArray(parsed.data)) {
+          return parsed
+        }
+      }
+    } catch (err: unknown) {
+      console.warn(`Modify model ${model} failed:`, err instanceof Error ? err.message : err)
+    }
+  }
+
+  return {
+    title: current.title,
+    summary: 'Could not apply change: ' + instruction,
+    columns: current.columns,
+    data: current.data,
+    metadata: current.metadata,
+  }
+}
