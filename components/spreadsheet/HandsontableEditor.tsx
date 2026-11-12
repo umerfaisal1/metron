@@ -5,6 +5,7 @@ import Handsontable from 'handsontable'
 import 'handsontable/styles/handsontable.min.css'
 import 'handsontable/styles/ht-theme-main.min.css'
 import { registerAllModules } from 'handsontable/registry'
+import { exportToXLSX, exportToCSV } from '@/lib/spreadsheet-file'
 
 // Register all Handsontable modules
 registerAllModules()
@@ -166,16 +167,24 @@ export default function HandsontableEditor({
     hotInstanceRef.current.alter('remove_row', minRow, amount)
   }
 
+  const handleExportXLSX = () => {
+    if (!hotInstanceRef.current) return
+    const currentData = hotInstanceRef.current.getData() as Array<Array<string | number | boolean>>
+    exportToXLSX({
+      title: 'metron_spreadsheet',
+      columns,
+      data: currentData,
+    })
+  }
+
   const handleExportCSV = () => {
     if (!hotInstanceRef.current) return
-    const exportPlugin = hotInstanceRef.current.getPlugin('exportFile')
-    if (exportPlugin) {
-      exportPlugin.downloadFile('csv', {
-        filename: 'metron_spreadsheet',
-        columnHeaders: true,
-        rowHeaders: false,
-      })
-    }
+    const currentData = hotInstanceRef.current.getData() as Array<Array<string | number | boolean>>
+    exportToCSV({
+      title: 'metron_spreadsheet',
+      columns,
+      data: currentData,
+    })
   }
 
   return (
@@ -231,8 +240,23 @@ export default function HandsontableEditor({
 
             <button
               type="button"
+              onClick={handleExportXLSX}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#F2F7F4] border border-[#DEE6E0] text-zinc-700 hover:text-[#0D361C] text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+              title="Export as Excel (.xlsx)"
+              aria-label="Export as Excel (.xlsx)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>XLSX</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleExportCSV}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#F2F7F4] border border-[#DEE6E0] text-zinc-700 hover:text-[#0D361C] text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+              title="Export as CSV (.csv)"
+              aria-label="Export as CSV (.csv)"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

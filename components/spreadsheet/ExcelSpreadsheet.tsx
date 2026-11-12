@@ -6,6 +6,8 @@ import Handsontable from 'handsontable'
 import 'handsontable/styles/handsontable.min.css'
 import 'handsontable/styles/ht-theme-main.min.css'
 import { registerAllModules } from 'handsontable/registry'
+import SpreadsheetImportModal from './SpreadsheetImportModal'
+import { exportToXLSX, exportToCSV } from '@/lib/spreadsheet-file'
 
 registerAllModules()
 
@@ -41,10 +43,19 @@ export default function ExcelSpreadsheet({
 
   // Sheet state
   const [title, setTitle] = useState(initialTitle || 'Untitled Workbook')
+  const [sheetName, setSheetName] = useState<string>('Sheet1')
   const [columns, setColumns] = useState<ColumnDef[]>(initialColumns || [])
   const [gridData, setGridData] = useState<Array<Array<string | number | boolean>>>(initialData || [])
   const [saveStatus, setSaveStatus] = useState<string>('Saved to Cloud')
   const [isSaving, setIsSaving] = useState(false)
+
+  // Import / Export state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false)
+  const [feedbackNotice, setFeedbackNotice] = useState<{
+    type: 'success' | 'error' | 'info'
+    message: string
+  } | null>(null)
 
   // Active Ribbon Tab
   const [activeTab, setActiveTab] = useState<'home' | 'insert' | 'formulas' | 'ai'>('home')
@@ -213,6 +224,7 @@ export default function ExcelSpreadsheet({
         hotInstanceRef.current = null
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, updateSelectionState])
 
   // Apply change from formula bar to active cell
@@ -379,17 +391,96 @@ export default function ExcelSpreadsheet({
     setSaveStatus('Unsaved edits')
   }
 
-  // Export CSV
-  const handleExportCSV = () => {
-    if (!hotInstanceRef.current) return
-    const exportPlugin = hotInstanceRef.current.getPlugin('exportFile')
-    if (exportPlugin) {
-      exportPlugin.downloadFile('csv', {
-        filename: title.replace(/\s+/g, '_'),
-        columnHeaders: true,
-        rowHeaders: false,
+  // Export XLSX
+  const handleExportXLSX = () => {
+    setIsExportMenuOpen(false)
+    const hot = hotInstanceRef.current
+    const currentData = hot
+      ? (hot.getData() as Array<Array<string | number | boolean>>)
+      : gridData
+
+    try {
+      exportToXLSX({
+        title,
+        sheetName,
+        columns,
+        data: currentData,
+      })
+      setFeedbackNotice({
+        type: 'success',
+        message: `Workbook exported as "${title || 'spreadsheet'}.xlsx" successfully.`,
+      })
+    } catch (err: unknown) {
+      setFeedbackNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to export Excel file.',
       })
     }
+  }
+
+  // Export CSV
+  const handleExportCSV = () => {
+    setIsExportMenuOpen(false)
+    const hot = hotInstanceRef.current
+    const currentData = hot
+      ? (hot.getData() as Array<Array<string | number | boolean>>)
+      : gridData
+
+    try {
+      exportToCSV({
+        title,
+        columns,
+        data: currentData,
+      })
+      setFeedbackNotice({
+        type: 'success',
+        message: `Sheet exported as "${title || 'spreadsheet'}.csv" successfully.`,
+      })
+    } catch (err: unknown) {
+      setFeedbackNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to export CSV file.',
+      })
+    }
+  }
+
+  // Import Complete Handler
+  const handleImportComplete = (result: {
+    sheetName: string
+    columns: ColumnDef[]
+    data: Array<Array<string | number | boolean>>
+    newTitle?: string
+  }) => {
+    setColumns(result.columns)
+    setGridData(result.data)
+    if (result.newTitle) {
+      setTitle(result.newTitle)
+    }
+    if (result.sheetName) {
+      setSheetName(result.sheetName)
+    }
+    setSaveStatus('Unsaved edits')
+
+    if (hotInstanceRef.current) {
+      hotInstanceRef.current.loadData(result.data)
+      hotInstanceRef.current.updateSettings({
+        colHeaders: result.columns.map((c) => c.title || 'Column'),
+        columns: result.columns.map((c) => {
+          if (c.type === 'dropdown' && Array.isArray(c.source)) {
+            return { type: 'dropdown', source: c.source }
+          }
+          if (c.type === 'numeric') {
+            return { type: 'numeric' }
+          }
+          return { type: 'text' }
+        }),
+      })
+    }
+
+    setFeedbackNotice({
+      type: 'success',
+      message: `Worksheet "${result.sheetName}" imported successfully (${result.data.length} rows, ${result.columns.length} columns). Marked as unsaved.`,
+    })
   }
 
   return (
@@ -469,27 +560,130 @@ export default function ExcelSpreadsheet({
           <span className="text-[11px] text-white/70">Tell me what you want to do</span>
         </div>
 
-        {/* Right: Export & Actions */}
+        {/* Right: Import, Export & Save Actions */}
         <div className="flex items-center gap-2">
+          {/* Import Action */}
           <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#0D6234] hover:bg-[#0A4F2A] font-semibold text-[11px] transition-colors"
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            aria-label="Import spreadsheet from .xlsx or .csv"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#0D6234] hover:bg-[#0A4F2A] font-semibold text-[11px] transition-colors cursor-pointer"
+            title="Import Excel (.xlsx) or CSV (.csv) file"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            <span>Export CSV</span>
+            <span>Import</span>
           </button>
+
+          {/* Export Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
+              aria-label="Export spreadsheet"
+              aria-expanded={isExportMenuOpen}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#0D6234] hover:bg-[#0A4F2A] font-semibold text-[11px] transition-colors cursor-pointer"
+              title="Export current worksheet as XLSX or CSV"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>Export</span>
+              <svg className="w-3 h-3 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {isExportMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsExportMenuOpen(false)}
+                />
+                <div
+                  role="menu"
+                  aria-orientation="vertical"
+                  className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-zinc-200 py-1 z-50 text-xs text-zinc-800"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleExportXLSX}
+                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 hover:text-[#107C41] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <span className="w-5 h-5 rounded bg-emerald-100 text-[#107C41] flex items-center justify-center font-bold text-[10px]">
+                      XLS
+                    </span>
+                    <div>
+                      <div className="font-semibold text-xs">Excel Workbook</div>
+                      <div className="text-[10px] text-zinc-400">Download .xlsx</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleExportCSV}
+                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 hover:text-[#107C41] flex items-center gap-2 cursor-pointer transition-colors border-t border-zinc-100"
+                  >
+                    <span className="w-5 h-5 rounded bg-zinc-100 text-zinc-700 flex items-center justify-center font-bold text-[10px]">
+                      CSV
+                    </span>
+                    <div>
+                      <div className="font-semibold text-xs">CSV (Comma-delimited)</div>
+                      <div className="text-[10px] text-zinc-400">Download .csv</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-1 px-3 py-1 rounded bg-white text-[#107C41] hover:bg-zinc-100 font-bold text-[11px] shadow-xs transition-colors"
+            className="flex items-center gap-1 px-3 py-1 rounded bg-white text-[#107C41] hover:bg-zinc-100 font-bold text-[11px] shadow-xs transition-colors cursor-pointer disabled:opacity-50"
           >
             {isSaving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </header>
+
+      {/* Accessible Feedback Notice Banner */}
+      {feedbackNotice && (
+        <div
+          role="status"
+          className={`px-3 py-1.5 border-b text-[11px] flex items-center justify-between flex-shrink-0 transition-all ${
+            feedbackNotice.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : feedbackNotice.type === 'error'
+              ? 'bg-red-50 border-red-200 text-red-900'
+              : 'bg-blue-50 border-blue-200 text-blue-900'
+          }`}
+        >
+          <div className="flex items-center gap-2 truncate">
+            {feedbackNotice.type === 'success' && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+            )}
+            {feedbackNotice.type === 'error' && (
+              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+            )}
+            {feedbackNotice.type === 'info' && (
+              <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+            )}
+            <span className="truncate">{feedbackNotice.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackNotice(null)}
+            aria-label="Dismiss notification"
+            className="text-zinc-500 hover:text-zinc-800 ml-2 font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 2. EXCEL RIBBON TABS (Home, Insert, Formulas, AI Assistant) */}
       <div className="bg-[#FAF9F8] border-b border-[#E1DFDD] px-3 pt-1 flex items-center gap-1 text-xs font-medium z-20 flex-shrink-0">
@@ -544,19 +738,61 @@ export default function ExcelSpreadsheet({
       <div className="bg-white border-b border-[#E1DFDD] px-3 py-1.5 min-h-[52px] flex items-center gap-4 text-xs z-20 flex-shrink-0 overflow-x-auto">
         {activeTab === 'home' && (
           <div className="flex items-center gap-3">
+            {/* Import & Export Group */}
+            <div className="flex items-center gap-1.5 pr-3 border-r border-[#E1DFDD]">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#F3F2F1] text-zinc-700 font-medium text-xs transition-colors cursor-pointer"
+                title="Import Excel (.xlsx) or CSV (.csv)"
+                aria-label="Import spreadsheet file"
+              >
+                <svg className="w-3.5 h-3.5 text-[#107C41]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span>Import</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportXLSX}
+                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#F3F2F1] text-zinc-700 font-medium text-xs transition-colors cursor-pointer"
+                title="Export as Excel .xlsx"
+                aria-label="Export as Excel (.xlsx)"
+              >
+                <svg className="w-3.5 h-3.5 text-[#107C41]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>XLSX</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#F3F2F1] text-zinc-700 font-medium text-xs transition-colors cursor-pointer"
+                title="Export as CSV .csv"
+                aria-label="Export as CSV (.csv)"
+              >
+                <svg className="w-3.5 h-3.5 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>CSV</span>
+              </button>
+            </div>
+
             {/* Clipboard Group */}
             <div className="flex items-center gap-1 pr-3 border-r border-[#E1DFDD]">
               <button
                 onClick={handleUndo}
-                className="p-1.5 rounded hover:bg-[#F3F2F1] text-zinc-700"
+                className="p-1.5 rounded hover:bg-[#F3F2F1] text-zinc-700 cursor-pointer"
                 title="Undo"
+                aria-label="Undo last action"
               >
                 ↺
               </button>
               <button
                 onClick={handleRedo}
-                className="p-1.5 rounded hover:bg-[#F3F2F1] text-zinc-700"
+                className="p-1.5 rounded hover:bg-[#F3F2F1] text-zinc-700 cursor-pointer"
                 title="Redo"
+                aria-label="Redo last action"
               >
                 ↻
               </button>
@@ -570,12 +806,13 @@ export default function ExcelSpreadsheet({
                   if (!hot) return
                   const sel = hot.getSelectedLast()
                   if (!sel) return
-                  const [r1, c1, r2, c2] = sel
+                  const [r1, c1] = sel
                   hot.setCellMeta(r1, c1, 'className', 'htBold')
                   hot.render()
                 }}
-                className="w-7 h-7 font-bold rounded hover:bg-[#F3F2F1] text-zinc-800 flex items-center justify-center font-serif text-sm"
+                className="w-7 h-7 font-bold rounded hover:bg-[#F3F2F1] text-zinc-800 flex items-center justify-center font-serif text-sm cursor-pointer"
                 title="Bold (Ctrl+B)"
+                aria-label="Format Bold"
               >
                 B
               </button>
@@ -748,19 +985,35 @@ export default function ExcelSpreadsheet({
         )}
 
         {activeTab === 'insert' && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleInsertRow}
-              className="px-3 py-1.5 rounded bg-[#F3F2F1] hover:bg-[#E1DFDD] font-medium text-xs"
-            >
-              + Insert Row Below
-            </button>
-            <button
-              onClick={handleInsertCol}
-              className="px-3 py-1.5 rounded bg-[#F3F2F1] hover:bg-[#E1DFDD] font-medium text-xs"
-            >
-              + Insert Column Right
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 pr-3 border-r border-[#E1DFDD]">
+              <button
+                type="button"
+                onClick={handleInsertRow}
+                className="px-3 py-1.5 rounded bg-[#F3F2F1] hover:bg-[#E1DFDD] font-medium text-xs cursor-pointer"
+              >
+                + Insert Row Below
+              </button>
+              <button
+                type="button"
+                onClick={handleInsertCol}
+                className="px-3 py-1.5 rounded bg-[#F3F2F1] hover:bg-[#E1DFDD] font-medium text-xs cursor-pointer"
+              >
+                + Insert Column Right
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#107C41]/10 hover:bg-[#107C41]/20 text-[#107C41] font-semibold text-xs transition-colors cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span>Import File (.xlsx / .csv)</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -863,13 +1116,17 @@ export default function ExcelSpreadsheet({
       <footer className="h-7 bg-[#F3F2F1] border-t border-[#D4D4D4] px-3 flex items-center justify-between text-[11px] text-zinc-600 z-10 flex-shrink-0">
         {/* Left: Sheet Tabs */}
         <div className="flex items-center gap-1">
-          <div className="flex items-center px-4 py-1 bg-white border-t-2 border-[#107C41] text-[#107C41] font-bold shadow-2xs cursor-pointer">
-            Sheet1
+          <div
+            className="flex items-center px-4 py-1 bg-white border-t-2 border-[#107C41] text-[#107C41] font-bold shadow-2xs cursor-pointer select-none truncate max-w-xs"
+            title={`Active Sheet: ${sheetName}`}
+          >
+            {sheetName}
           </div>
           <button
             onClick={handleInsertRow}
-            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-500 font-bold"
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-500 font-bold cursor-pointer"
             title="Add more rows"
+            aria-label="Add more rows"
           >
             +
           </button>
@@ -894,6 +1151,14 @@ export default function ExcelSpreadsheet({
           <span className="hidden sm:inline font-sans text-emerald-800 font-semibold">Ready</span>
         </div>
       </footer>
+
+      {/* Spreadsheet Import Modal */}
+      <SpreadsheetImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentTitle={title}
+        onImportComplete={handleImportComplete}
+      />
     </div>
   )
 }

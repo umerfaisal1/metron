@@ -1,17 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import SignOutButton from '@/components/SignOutButton'
+import ImportModal from '@/components/dashboard/ImportModal'
 
 interface SpreadsheetSummary {
   id: string
   title: string
   prompt?: string | null
-  columns?: any[]
-  data?: any[][]
+  columns?: Array<{ title: string; type?: string; width?: number }>
+  data?: Array<Array<string | number | boolean>>
   created_at?: string
   updated_at?: string
   metadata?: {
@@ -34,27 +35,34 @@ export default function DashboardView({
   const [isGenerating, setIsGenerating] = useState(false)
   const [savedSheets, setSavedSheets] = useState<SpreadsheetSummary[]>([])
   const [loadingSheets, setLoadingSheets] = useState(true)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
 
   // Fetch saved spreadsheets from Supabase
-  const loadSavedSpreadsheets = useCallback(async () => {
-    try {
-      const res = await fetch('/api/spreadsheets')
-      if (res.ok) {
-        const json = await res.json()
-        if (Array.isArray(json.spreadsheets)) {
-          setSavedSheets(json.spreadsheets)
+  useEffect(() => {
+    let isMounted = true
+    const fetchSheets = async () => {
+      try {
+        const res = await fetch('/api/spreadsheets')
+        if (res.ok) {
+          const json = await res.json()
+          if (isMounted && Array.isArray(json.spreadsheets)) {
+            setSavedSheets(json.spreadsheets)
+          }
+        }
+      } catch (e) {
+        console.warn('Could not load saved spreadsheets from Supabase:', e)
+      } finally {
+        if (isMounted) {
+          setLoadingSheets(false)
         }
       }
-    } catch (e) {
-      console.warn('Could not load saved spreadsheets from Supabase:', e)
-    } finally {
-      setLoadingSheets(false)
+    }
+
+    fetchSheets()
+    return () => {
+      isMounted = false
     }
   }, [])
-
-  useEffect(() => {
-    loadSavedSpreadsheets()
-  }, [loadSavedSpreadsheets])
 
   // Generate spreadsheet with Gemini and navigate to /sheets/[id]
   const handleGenerate = async (customPrompt?: string) => {
@@ -178,6 +186,16 @@ export default function DashboardView({
 
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-[#F4F7F4] border border-[#DCE4DE] text-zinc-800 transition-colors shadow-2xs cursor-pointer"
+          >
+            <svg className="w-3.5 h-3.5 text-[#0D361C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Import Spreadsheet</span>
+          </button>
+
+          <button
             onClick={handleCreateBlank}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-[#F4F7F4] border border-[#DCE4DE] text-zinc-800 transition-colors shadow-2xs cursor-pointer"
           >
@@ -191,7 +209,7 @@ export default function DashboardView({
             <div className="w-7 h-7 rounded-full bg-[#0D361C] text-white flex items-center justify-center font-bold text-xs">
               {userName.charAt(0).toUpperCase()}
             </div>
-            <span className="text-xs font-medium text-zinc-700">{userName}</span>
+            <span className="text-xs font-medium text-zinc-700" title={userEmail || undefined}>{userName}</span>
             <SignOutButton className="p-1 border-0 hover:bg-red-50 text-zinc-400 hover:text-red-600 rounded-lg text-xs" />
           </div>
         </div>
@@ -386,6 +404,12 @@ export default function DashboardView({
           )}
         </section>
       </main>
+
+      {/* Dashboard Import Modal */}
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
     </div>
   )
 }

@@ -18,10 +18,11 @@ export default function AISheetPreviewModal({
 
   useEffect(() => {
     if (isOpen) {
-      setStep(1)
+      const t0 = setTimeout(() => setStep(1), 0)
       const t1 = setTimeout(() => setStep(2), 700)
       const t2 = setTimeout(() => setStep(3), 1500)
       return () => {
+        clearTimeout(t0)
         clearTimeout(t1)
         clearTimeout(t2)
       }

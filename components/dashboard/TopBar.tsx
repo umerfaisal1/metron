@@ -145,7 +145,7 @@ export default function TopBar({
           <div className="w-7 h-7 rounded-full bg-[#0D361C] text-white flex items-center justify-center font-bold text-xs shadow-xs">
             {userName.charAt(0).toUpperCase()}
           </div>
-          <span className="text-xs font-medium text-zinc-800">{userName}</span>
+          <span className="text-xs font-medium text-zinc-800" title={userEmail || undefined}>{userName}</span>
         </div>
 
         {/* Prominent "+ New Spreadsheet" Button */}

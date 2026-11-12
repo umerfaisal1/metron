@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface WelcomeSectionProps {
   userName?: string
@@ -15,14 +15,12 @@ export default function WelcomeSection({
   onImportFile,
   onBlankSpreadsheet,
 }: WelcomeSectionProps) {
-  const [greeting, setGreeting] = useState('Good morning')
-
-  useEffect(() => {
+  const [greeting] = useState(() => {
     const hour = new Date().getHours()
-    if (hour < 12) setGreeting('Good morning')
-    else if (hour < 18) setGreeting('Good afternoon')
-    else setGreeting('Good evening')
-  }, [])
+    if (hour < 12) return 'Good morning'
+    if (hour < 18) return 'Good afternoon'
+    return 'Good evening'
+  })
 
   const actions = [
     {
