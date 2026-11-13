@@ -1,17 +1,19 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import SignOutButton from '@/components/SignOutButton'
 import ImportModal from '@/components/dashboard/ImportModal'
+import { parseSpreadsheetBuffer } from '@/lib/spreadsheet/fileParser'
+import { ColumnDef } from '@/components/spreadsheet/ExcelSpreadsheet'
 
 interface SpreadsheetSummary {
   id: string
   title: string
   prompt?: string | null
-  columns?: Array<{ title: string; type?: string; width?: number }>
+  columns?: ColumnDef[]
   data?: Array<Array<string | number | boolean>>
   created_at?: string
   updated_at?: string
@@ -31,8 +33,10 @@ export default function DashboardView({
   userName = 'Usman',
 }: DashboardViewProps) {
   const router = useRouter()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [promptInput, setPromptInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [savedSheets, setSavedSheets] = useState<SpreadsheetSummary[]>([])
   const [loadingSheets, setLoadingSheets] = useState(true)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
@@ -64,6 +68,7 @@ export default function DashboardView({
     }
   }, [])
 
+
   // Generate spreadsheet with Gemini and navigate to /sheets/[id]
   const handleGenerate = async (customPrompt?: string) => {
     const promptToUse = (customPrompt || promptInput).trim()
@@ -85,7 +90,6 @@ export default function DashboardView({
       }
 
       if (json.spreadsheet?.id) {
-        // Navigate to the newly generated spreadsheet page
         router.push(`/sheets/${json.spreadsheet.id}`)
       }
     } catch (err: unknown) {
@@ -118,7 +122,7 @@ export default function DashboardView({
             ['', '', '', '', ''],
             ['', '', '', '', ''],
           ],
-          metadata: { summary: 'Blank spreadsheet grid with live cell editing.' },
+          metadata: { summary: 'Blank spreadsheet grid with live cell editing and charts.' },
         }),
       })
 
@@ -128,6 +132,46 @@ export default function DashboardView({
       }
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  // Handle Excel / CSV File Upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsUploading(true)
+    try {
+      const buffer = await file.arrayBuffer()
+      const parsed = parseSpreadsheetBuffer(buffer, file.name)
+
+      const res = await fetch('/api/spreadsheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: parsed.title,
+          prompt: `Imported file: ${file.name}`,
+          columns: parsed.activeSheet.columns,
+          data: parsed.activeSheet.data,
+          metadata: {
+            filename: parsed.filename,
+            summary: `Imported from ${file.name} (${parsed.activeSheet.data.length} rows, ${parsed.activeSheet.columns.length} columns).`,
+          },
+        }),
+      })
+
+      const json = await res.json()
+      if (res.ok && json.spreadsheet?.id) {
+        router.push(`/sheets/${json.spreadsheet.id}`)
+      } else {
+        throw new Error(json.error || 'Failed to save imported file')
+      }
+    } catch (err) {
+      console.error('File import error:', err)
+      alert(err instanceof Error ? err.message : 'Failed to import spreadsheet file.')
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
@@ -170,6 +214,14 @@ export default function DashboardView({
 
   return (
     <div className="min-h-screen bg-[#F8FAF8] text-[#0D1F14] flex flex-col font-sans">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
+
       {/* Header */}
       <header className="sticky top-0 z-40 h-16 bg-white/95 backdrop-blur border-b border-[#E5EAE7] px-4 sm:px-8 flex items-center justify-between">
         <Link href="/dashboard" className="flex items-center gap-2">
@@ -221,18 +273,17 @@ export default function DashboardView({
         <div className="text-center space-y-2 max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-[#EAF5EE] text-[#0D361C] border border-[#CDE5D5] shadow-2xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            AI-Powered Spreadsheet Generator
+            AI Spreadsheets & Instant Visualizations
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#0D1F14]">
             Describe any spreadsheet. Metron generates it.
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-            Enter your requirements in plain English. Gemini builds live columns, calculations, and formulas,
-            opening directly in an Excel-style interactive workspace.
+            Enter your requirements in plain English, or upload an existing Excel/CSV file. Metron builds live columns, calculations, and automatically renders executive Apache ECharts.
           </p>
         </div>
 
-        {/* AI Prompt Input Card (The Star of MVP) */}
+        {/* AI Prompt Input Card */}
         <section className="rounded-2xl bg-white border border-[#D7E4DC] p-5 sm:p-7 shadow-sm transition-all focus-within:border-[#0D361C] focus-within:ring-3 focus-within:ring-[#0D361C]/10">
           <form
             onSubmit={(e) => {
@@ -261,31 +312,41 @@ export default function DashboardView({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#EDF2EE]">
               <div className="flex items-center gap-2 text-[11px] text-zinc-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span>Powered by Gemini API & Handsontable</span>
+                <span>Powered by Gemini API, Handsontable & Apache ECharts</span>
               </div>
 
-              <button
-                type="submit"
-                disabled={isGenerating || !promptInput.trim()}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-[#0D361C] hover:bg-[#144D28] active:bg-[#082211] disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-all cursor-pointer whitespace-nowrap"
-              >
-                {isGenerating ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Generating Spreadsheet…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Generate & Open in Excel</span>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#F4F7F4] hover:bg-[#EAEFEA] text-zinc-700 transition-colors cursor-pointer"
+                >
+                  Upload File instead
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isGenerating || !promptInput.trim()}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-[#0D361C] hover:bg-[#144D28] active:bg-[#082211] disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                >
+                  {isGenerating ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Generating Spreadsheet…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Generate & Open in Excel</span>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         </section>
@@ -349,7 +410,7 @@ export default function DashboardView({
             <div className="p-8 rounded-2xl bg-white border border-[#E5EAE7] text-center space-y-2">
               <p className="text-xs font-semibold text-zinc-700">No saved spreadsheets yet</p>
               <p className="text-[11px] text-zinc-400">
-                Type a prompt above or click one of the popular ideas to create your first spreadsheet.
+                Type a prompt above, click one of the popular ideas, or upload an Excel file to get started.
               </p>
             </div>
           ) : (
@@ -374,7 +435,7 @@ export default function DashboardView({
                       <button
                         type="button"
                         onClick={(e) => handleDeleteSheet(e, sheet.id)}
-                        className="text-zinc-300 hover:text-red-600 p-1 rounded transition-colors"
+                        className="text-zinc-300 hover:text-red-600 p-1 rounded transition-colors cursor-pointer"
                         title="Delete"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -395,7 +456,7 @@ export default function DashboardView({
                       {Array.isArray(sheet.data) ? sheet.data.length : 0} rows • {Array.isArray(sheet.columns) ? sheet.columns.length : 0} cols
                     </span>
                     <span className="text-[#107C41] font-semibold group-hover:underline">
-                      Open Excel View →
+                      Open Excel & Charts →
                     </span>
                   </div>
                 </Link>
