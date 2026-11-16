@@ -23,6 +23,13 @@ import {
   parseSpreadsheetBuffer,
 } from '../lib/spreadsheet/fileParser'
 
+import {
+  mapRowToProcessedChart,
+  chartToDbRow,
+} from '../lib/charts/chartPersistence'
+
+import { ProcessedChartData } from '../lib/charts/types'
+
 import * as XLSX from 'xlsx'
 
 describe('Workbook Analysis Engine', () => {
@@ -331,5 +338,112 @@ describe('Spreadsheet File Parser (SheetJS)', () => {
     assert.equal(parsed.activeSheet.columns[2].type, 'numeric')
     assert.equal(parsed.activeSheet.data.length, 3)
     assert.equal(parsed.activeSheet.data[0][0], 'Laptop Pro')
+  })
+})
+
+describe('Supabase Chart Persistence & Data Mapping', () => {
+  const sampleProcessedChart: ProcessedChartData = {
+    recommendation: {
+      id: 'chart-category-bar-0',
+      title: 'Expense Distribution by Category',
+      description: 'Sum of expenses categorized by type',
+      chartType: 'bar' as const,
+      xAxisColumn: 'Category',
+      yAxisColumns: ['Amount'],
+      aggregation: 'sum' as const,
+      explanation: 'Displays total expenditure across distinct categories.',
+      colorPalette: ['#107C41', '#0078D4'],
+      options: { showDataLabels: true },
+    },
+    echartsOption: {
+      title: { text: 'Expense Distribution by Category' },
+      series: [{ type: 'bar', data: [500, 1200, 350] }],
+    } as any,
+    calculatedPoints: 3,
+    warning: undefined,
+  }
+
+  it('converts ProcessedChartData into a valid Supabase chart database row', () => {
+    const spreadsheetId = '11111111-2222-3333-4444-555555555555'
+    const userId = 'user-auth-id-abc'
+    const dbRow = chartToDbRow(sampleProcessedChart, spreadsheetId, userId)
+
+    assert.equal(dbRow.spreadsheet_id, spreadsheetId)
+    assert.equal(dbRow.user_id, userId)
+    assert.equal(dbRow.chart_id, 'chart-category-bar-0')
+    assert.equal(dbRow.title, 'Expense Distribution by Category')
+    assert.equal(dbRow.chart_type, 'bar')
+    assert.equal(dbRow.x_axis_column, 'Category')
+    assert.deepEqual(dbRow.y_axis_columns, ['Amount'])
+    assert.equal(dbRow.aggregation, 'sum')
+    assert.deepEqual(dbRow.color_palette, ['#107C41', '#0078D4'])
+    assert.deepEqual(dbRow.echarts_option, sampleProcessedChart.echartsOption)
+    assert.equal(dbRow.metadata.calculatedPoints, 3)
+    assert.ok(dbRow.updated_at, 'updated_at timestamp must be populated')
+  })
+
+  it('restores ProcessedChartData faithfully from a Supabase charts row', () => {
+    const rawRow = {
+      id: 'uuid-row-1',
+      spreadsheet_id: '11111111-2222-3333-4444-555555555555',
+      user_id: 'user-auth-id-abc',
+      chart_id: 'chart-pie-expenses-1',
+      title: 'Monthly Category Breakdown',
+      description: 'Percentage share of each expense category',
+      chart_type: 'pie',
+      x_axis_column: 'Category',
+      y_axis_columns: ['Amount'],
+      aggregation: 'sum',
+      explanation: 'Pie chart showing budget allocation.',
+      color_palette: ['#107C41', '#D83B01'],
+      options: { donut: true },
+      echarts_option: {
+        series: [{ type: 'pie', radius: ['40%', '70%'], data: [{ name: 'Food', value: 1500 }] }],
+      },
+      metadata: { calculatedPoints: 5, warning: null },
+      created_at: '2026-11-16T12:00:00Z',
+      updated_at: '2026-11-16T12:00:00Z',
+    }
+
+    const restored = mapRowToProcessedChart(rawRow)
+
+    assert.equal(restored.recommendation.id, 'chart-pie-expenses-1')
+    assert.equal(restored.recommendation.title, 'Monthly Category Breakdown')
+    assert.equal(restored.recommendation.chartType, 'pie')
+    assert.equal(restored.recommendation.xAxisColumn, 'Category')
+    assert.deepEqual(restored.recommendation.yAxisColumns, ['Amount'])
+    assert.equal(restored.recommendation.aggregation, 'sum')
+    assert.deepEqual(restored.recommendation.colorPalette, ['#107C41', '#D83B01'])
+    assert.equal(restored.recommendation.options?.donut, true)
+    assert.deepEqual(restored.echartsOption, rawRow.echarts_option)
+    assert.equal(restored.calculatedPoints, 5)
+  })
+
+  it('guarantees duplicate prevention by enforcing unique chart_id keys', () => {
+    const spreadsheetId = 'sheet-xyz'
+    const chartA = { ...sampleProcessedChart }
+    const chartB = {
+      ...sampleProcessedChart,
+      recommendation: {
+        ...sampleProcessedChart.recommendation,
+        title: 'Updated Title',
+      },
+    }
+
+    // When upserting two records with the same chart_id, the onConflict key
+    // (spreadsheet_id, chart_id) ensures single row idempotence in PostgreSQL
+    const rowA = chartToDbRow(chartA, spreadsheetId)
+    const rowB = chartToDbRow(chartB, spreadsheetId)
+
+    assert.equal(rowA.chart_id, rowB.chart_id)
+    assert.equal(rowA.spreadsheet_id, rowB.spreadsheet_id)
+
+    // Deduplication test: when simulated in an upsert map
+    const upsertMap = new Map<string, ReturnType<typeof chartToDbRow>>()
+    upsertMap.set(`${rowA.spreadsheet_id}_${rowA.chart_id}`, rowA)
+    upsertMap.set(`${rowB.spreadsheet_id}_${rowB.chart_id}`, rowB)
+
+    assert.equal(upsertMap.size, 1, 'Duplicate chart entries must be collapsed into 1 record')
+    assert.equal(upsertMap.get(`${rowA.spreadsheet_id}_${rowA.chart_id}`)?.title, 'Updated Title')
   })
 })

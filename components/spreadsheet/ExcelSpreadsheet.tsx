@@ -9,6 +9,7 @@ import { registerAllModules } from 'handsontable/registry'
 import { useSpreadsheetStore } from '@/lib/store/useSpreadsheetStore'
 import ChartDashboard from '@/components/charts/ChartDashboard'
 import { parseSpreadsheetBuffer } from '@/lib/spreadsheet/fileParser'
+import { ProcessedChartData } from '@/lib/charts/types'
 
 registerAllModules()
 
@@ -29,6 +30,7 @@ interface ExcelSpreadsheetProps {
     summary?: string
     notes?: string
   }
+  initialCharts?: ProcessedChartData[]
 }
 
 export default function ExcelSpreadsheet({
@@ -38,6 +40,7 @@ export default function ExcelSpreadsheet({
   sheetId,
   initialPrompt,
   initialMetadata,
+  initialCharts,
 }: ExcelSpreadsheetProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const hotInstanceRef = useRef<Handsontable | null>(null)
@@ -92,8 +95,9 @@ export default function ExcelSpreadsheet({
       columns: initialColumns || [],
       data: initialData || [],
       metadata: initialMetadata || {},
+      charts: initialCharts || [],
     })
-  }, [sheetId, initialTitle, initialColumns, initialData, initialMetadata, setWorkbook])
+  }, [sheetId, initialTitle, initialColumns, initialData, initialMetadata, initialCharts, setWorkbook])
 
   // Convert (row, col) to Excel-style (e.g. 0, 0 -> A1, 1, 2 -> C2)
   const toExcelCoord = (row: number, col: number) => {
@@ -274,6 +278,7 @@ export default function ExcelSpreadsheet({
           prompt: initialPrompt,
           columns,
           data: currentData,
+          charts,
           metadata: {
             summary: aiNotice,
             ...initialMetadata,

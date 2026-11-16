@@ -40,6 +40,7 @@ interface SpreadsheetState {
     columns: ColumnDef[]
     data: Array<Array<string | number | boolean>>
     metadata?: Record<string, unknown>
+    charts?: ProcessedChartData[]
   }) => void
   setTitle: (title: string) => void
   setColumns: (columns: ColumnDef[]) => void
@@ -74,13 +75,14 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   saveStatus: 'Saved to Cloud',
   isSaving: false,
 
-  setWorkbook: ({ id, title, columns, data, metadata }) => {
+  setWorkbook: ({ id, title, columns, data, metadata, charts }) => {
     set({
       id,
       title: title || 'Untitled Spreadsheet',
       columns: columns || [],
       data: data || [],
       metadata: metadata || {},
+      charts: charts || [],
     })
   },
 
@@ -115,6 +117,14 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     set((state) => ({
       charts: state.charts.filter((c) => c.recommendation.id !== chartId),
     }))
+
+    // Asynchronously delete from Supabase if stored
+    const currentId = get().id
+    if (currentId && !currentId.startsWith('local-') && !currentId.startsWith('demo-')) {
+      fetch(`/api/charts?spreadsheetId=${encodeURIComponent(currentId)}&chartId=${encodeURIComponent(chartId)}`, {
+        method: 'DELETE',
+      }).catch((err) => console.warn('Could not delete chart from Supabase:', err))
+    }
   },
 
   // Recalculates all active charts deterministically from current grid data
@@ -132,9 +142,9 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     }
   },
 
-  // Calls AI chart generation API
+  // Calls AI chart generation API and auto-persists to Supabase
   generateAICharts: async () => {
-    const { title, columns, data, metadata } = get()
+    const { id, title, columns, data, metadata } = get()
     if (!columns || columns.length === 0 || !data || data.length === 0) {
       set({ chartError: 'Spreadsheet has no data to visualize.' })
       return
@@ -155,13 +165,31 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
         throw new Error(json.error || 'Failed to generate charts.')
       }
 
+      const generatedCharts: ProcessedChartData[] = json.charts || []
+
       set({
         isGeneratingCharts: false,
-        charts: json.charts || [],
+        charts: generatedCharts,
         overallInsight: json.overallInsight || null,
         isSuitableForVisualization: json.isSuitableForVisualization ?? true,
         unsuitabilityReason: json.unsuitabilityReason || null,
       })
+
+      // If workbook is saved in Supabase, permanently persist generated charts immediately
+      if (id && !id.startsWith('local-') && !id.startsWith('demo-') && generatedCharts.length > 0) {
+        try {
+          await fetch('/api/charts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              spreadsheetId: id,
+              charts: generatedCharts,
+            }),
+          })
+        } catch (saveErr) {
+          console.warn('Could not auto-persist generated charts to Supabase:', saveErr)
+        }
+      }
     } catch (err: unknown) {
       set({
         isGeneratingCharts: false,

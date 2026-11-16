@@ -19,6 +19,9 @@ interface SpreadsheetSummary {
   metadata?: {
     summary?: string
     notes?: string
+    chartCount?: number
+    hasCharts?: boolean
+    [key: string]: unknown
   }
 }
 
@@ -471,6 +474,7 @@ export default function DashboardView({
                   <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[10px] text-zinc-400">
                     <span>
                       {Array.isArray(sheet.data) ? sheet.data.length : 0} rows • {Array.isArray(sheet.columns) ? sheet.columns.length : 0} cols
+                      {sheet.metadata?.chartCount ? ` • ${sheet.metadata.chartCount} ${sheet.metadata.chartCount === 1 ? 'chart' : 'charts'}` : ''}
                     </span>
                     <span className="text-[#107C41] font-semibold group-hover:underline">
                       Open Excel & Charts →

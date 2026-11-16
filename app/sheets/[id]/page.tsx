@@ -1,5 +1,7 @@
 import ExcelSpreadsheet from '@/components/spreadsheet/ExcelSpreadsheet'
 import { createClient } from '@/lib/supabase/server'
+import { mapRowToProcessedChart } from '@/lib/charts/chartPersistence'
+import { ProcessedChartData } from '@/lib/charts/types'
 
 export const instant = false
 
@@ -34,8 +36,9 @@ export default async function SheetPage({ params }: PageProps) {
   let metadata: { summary?: string; notes?: string } = {
     summary: 'Loaded interactive spreadsheet. Edit cells directly or use the AI Assistant tab to modify.',
   }
+  let initialCharts: ProcessedChartData[] = []
 
-  // Fetch record from Supabase if not a temporary demo ID
+  // Fetch record and saved charts from Supabase if not a temporary demo ID
   if (id && !id.startsWith('demo-') && !id.startsWith('starter-') && !id.startsWith('local-')) {
     try {
       const supabase = await createClient()
@@ -52,8 +55,22 @@ export default async function SheetPage({ params }: PageProps) {
         if (record.prompt) prompt = record.prompt
         if (record.metadata) metadata = record.metadata
       }
+
+      // Fetch saved charts from public.charts
+      const { data: chartRows } = await supabase
+        .from('charts')
+        .select('*')
+        .eq('spreadsheet_id', id)
+        .order('created_at', { ascending: true })
+
+      if (chartRows && chartRows.length > 0) {
+        initialCharts = chartRows.map(mapRowToProcessedChart)
+      } else if (record && Array.isArray(record.metadata?.charts)) {
+        // Fallback to metadata snapshot if rows not yet migrated
+        initialCharts = record.metadata.charts
+      }
     } catch (e) {
-      console.warn('Could not fetch sheet from Supabase:', e)
+      console.warn('Could not fetch sheet or charts from Supabase:', e)
     }
   }
 
@@ -65,6 +82,7 @@ export default async function SheetPage({ params }: PageProps) {
       initialData={data}
       initialPrompt={prompt}
       initialMetadata={metadata}
+      initialCharts={initialCharts}
     />
   )
 }
