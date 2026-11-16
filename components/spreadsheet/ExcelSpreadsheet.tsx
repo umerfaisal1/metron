@@ -65,6 +65,7 @@ export default function ExcelSpreadsheet({
     updateData,
     setSaveStatus,
     setIsSaving,
+    setCharts,
     generateAICharts,
   } = useSpreadsheetStore()
 
@@ -343,7 +344,13 @@ export default function ExcelSpreadsheet({
           setColumns(mod.columns)
           updateData(mod.data)
           if (mod.title) setTitle(mod.title)
-          setAiNotice(mod.summary || `Applied: "${text}"`)
+
+          let noticeMsg = json.message || mod.summary || `Applied: "${text}"`
+          if (Array.isArray(json.steps) && json.steps.length > 0) {
+            const toolNames = json.steps.map((s: { toolName: string }) => s.toolName).join(', ')
+            noticeMsg = `Agent executed [${toolNames}]: ${noticeMsg}`
+          }
+          setAiNotice(noticeMsg)
           setAiInstruction('')
 
           if (hotInstanceRef.current) {
@@ -352,6 +359,11 @@ export default function ExcelSpreadsheet({
               colHeaders: mod.columns.map((c: ColumnDef) => c.title || 'Column'),
             })
           }
+        }
+
+        if (Array.isArray(json.charts) && json.charts.length > 0) {
+          setCharts(json.charts)
+          setActiveView('split')
         }
       } else {
         throw new Error(json.error || 'Could not modify spreadsheet')
@@ -1077,43 +1089,75 @@ export default function ExcelSpreadsheet({
 
         {/* AI Assistant Ribbon Toolbar */}
         {activeTab === 'ai' && (
-          <div className="flex-1 flex flex-col sm:flex-row items-center gap-2 w-full">
-            <div className="relative flex-1 w-full">
-              <input
-                type="text"
-                value={aiInstruction}
-                onChange={(e) => setAiInstruction(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAiModify()
-                }}
-                placeholder="Ask Gemini to edit this spreadsheet (e.g. 'Add a column for notes', 'Calculate totals at bottom', 'Add 15% tax column')"
-                disabled={isAiProcessing}
-                className="w-full px-3 py-1.5 rounded border border-[#C8C6C4] bg-[#FAF9F8] text-xs focus:bg-white focus:outline-none focus:border-[#107C41] focus:ring-1 focus:ring-[#107C41]"
-              />
+          <div className="flex-1 flex flex-col gap-2 w-full">
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+              <div className="relative flex-1 w-full">
+                <input
+                  type="text"
+                  value={aiInstruction}
+                  onChange={(e) => setAiInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAiModify()
+                  }}
+                  placeholder="Ask Metron Agent to edit spreadsheet or create charts (e.g. 'Add a 15% tax column', 'Create pie chart for expenses', 'Calculate totals at bottom')"
+                  disabled={isAiProcessing}
+                  className="w-full px-3 py-1.5 rounded border border-[#C8C6C4] bg-[#FAF9F8] text-xs focus:bg-white focus:outline-none focus:border-[#107C41] focus:ring-1 focus:ring-[#107C41]"
+                />
+              </div>
+
+              <button
+                onClick={() => handleAiModify()}
+                disabled={isAiProcessing || !aiInstruction.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded bg-[#107C41] hover:bg-[#0D6234] text-white font-semibold text-xs disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
+              >
+                {isAiProcessing ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Agent Calling Tools…</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Run Agent</span>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </>
+                )}
+              </button>
             </div>
 
-            <button
-              onClick={() => handleAiModify()}
-              disabled={isAiProcessing || !aiInstruction.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded bg-[#107C41] hover:bg-[#0D6234] text-white font-semibold text-xs disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              {isAiProcessing ? (
-                <>
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  <span>Updating...</span>
-                </>
-              ) : (
-                <>
-                  <span>Apply with AI</span>
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </>
-              )}
-            </button>
+            {/* Quick Agent Actions */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+              <span className="text-zinc-400 font-medium text-[10px]">Quick Agent Prompts:</span>
+              <button
+                type="button"
+                onClick={() => handleAiModify('Add a 15% Tax column calculating tax on the main cost')}
+                className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-emerald-50 hover:text-[#107C41] text-zinc-600 border border-zinc-200 transition-colors cursor-pointer"
+              >
+                + 15% Tax Column
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiModify('Add a Summary Total row at the bottom with formulas summing numeric columns')}
+                className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-emerald-50 hover:text-[#107C41] text-zinc-600 border border-zinc-200 transition-colors cursor-pointer"
+              >
+                Σ Summary Total Row
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiModify('Create an executive chart for this spreadsheet data')}
+                className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-emerald-50 hover:text-[#107C41] text-zinc-600 border border-zinc-200 transition-colors cursor-pointer"
+              >
+                📊 Create Charts
+              </button>
+              <span className="ml-auto text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium hidden md:inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Google GenAI Free Tier Tool Calling
+              </span>
+            </div>
           </div>
         )}
 
