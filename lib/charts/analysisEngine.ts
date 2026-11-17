@@ -5,45 +5,12 @@ import {
   SheetAnalysis,
   WorkbookAnalysisResult,
 } from './types'
+import {
+  parseNumericValue,
+  evaluateGridFormulas,
+} from './formulaEvaluator'
 
-// Helper to clean cell values into numbers
-export function parseNumericValue(val: unknown): number | null {
-  if (val === null || val === undefined || val === '') return null
-  if (typeof val === 'number') {
-    return isFinite(val) ? val : null
-  }
-
-  const str = String(val).trim()
-  if (str === '') return null
-
-  // If it's a formula string (e.g. "=SUM(D2:D10)" or "=D2*E2"), check if there's a simple evaluation or skip
-  if (str.startsWith('=')) {
-    // If it references letters (cell names like D2, SUM), skip evaluating
-    if (/[a-zA-Z:]/.test(str)) return null
-
-    // Try pure arithmetic formulas e.g. "=500*2" or "=1200+300"
-    try {
-      const sanitized = str.substring(1).replace(/[^0-9.+\-*/() ]/g, '')
-      if (sanitized && !/[a-zA-Z]/.test(sanitized)) {
-        // eslint-disable-next-line no-eval
-        const evaluated = Function(`"use strict"; return (${sanitized})`)()
-        if (typeof evaluated === 'number' && isFinite(evaluated)) return evaluated
-      }
-    } catch {
-      // ignore
-    }
-    return null
-  }
-
-  // Remove common currency symbols (Rs., Rs, $, €, etc.), commas, spaces, percentage signs
-  const cleaned = str.replace(/rs\.?/gi, '').replace(/[$€£¥₹,\s%]/gi, '').trim()
-  const num = parseFloat(cleaned)
-  if (!isNaN(num) && isFinite(num)) {
-    return num
-  }
-
-  return null
-}
+export { parseNumericValue, evaluateGridFormulas }
 
 // Helper to check if a value is a date
 export function isDateLike(val: unknown): boolean {
@@ -110,7 +77,7 @@ export function analyzeColumn(
     if (parsed !== null) numericValues.push(parsed)
   }
   const numericRatio = nonNullCount > 0 ? numericValues.length / nonNullCount : 0
-  const isNumeric = declaredType === 'numeric' || (nonNullCount > 0 && numericRatio >= 0.7)
+  const isNumeric = declaredType === 'numeric' || (nonNullCount > 0 && numericRatio >= 0.5)
 
   // Test date
   let dateMatches = 0
@@ -120,7 +87,7 @@ export function analyzeColumn(
   const dateRatio = nonNullCount > 0 ? dateMatches / nonNullCount : 0
   const titleLower = title.toLowerCase()
   const titleHasDateHint = titleLower.includes('date') || titleLower.includes('month') || titleLower.includes('year') || titleLower.includes('day') || titleLower.includes('period') || titleLower.includes('quarter')
-  const isDate = dateRatio >= 0.6 || (titleHasDateHint && dateRatio >= 0.3)
+  const isDate = dateRatio >= 0.5 || (titleHasDateHint && dateRatio >= 0.25)
 
   // Determine detectedType
   let detectedType: ColumnDataType = 'text'
@@ -192,31 +159,34 @@ export function analyzeSheet(
   columns: Array<{ title: string; type?: string }>,
   data: Array<Array<unknown>>
 ): SheetAnalysis {
-  const rowCount = data.length
+  // Pre-evaluate formula cells so analysis uses actual computed numbers
+  const evaluatedData = evaluateGridFormulas(data)
+
+  const rowCount = evaluatedData.length
   const colCount = columns.length
 
   // Check for summary row
   let hasSummaryRow = false
   let summaryRowIndex: number | undefined = undefined
 
-  if (rowCount > 0 && isSummaryRow(data[rowCount - 1])) {
+  if (rowCount > 0 && isSummaryRow(evaluatedData[rowCount - 1])) {
     hasSummaryRow = true
     summaryRowIndex = rowCount - 1
   }
 
-  // Filter out summary row when calculating column profiles
-  const effectiveData = hasSummaryRow ? data.slice(0, summaryRowIndex) : data
+  const effectiveRows = hasSummaryRow ? evaluatedData.slice(0, rowCount - 1) : evaluatedData
 
   // Analyze each column
-  const columnAnalyses: ColumnAnalysis[] = columns.map((col, idx) => {
-    const colValues = effectiveData.map((row) => (Array.isArray(row) ? row[idx] : undefined))
-    return analyzeColumn(col.title || `Column ${idx + 1}`, idx, col.type, colValues)
+  const columnAnalyses: ColumnAnalysis[] = columns.map((col, cIdx) => {
+    const colValues = effectiveRows.map((row) => (Array.isArray(row) ? row[cIdx] : undefined))
+    return analyzeColumn(col.title || `Column ${cIdx + 1}`, cIdx, col.type, colValues)
   })
 
-  // Check suitability
+  // Determine visualization suitability
   const quantCols = columnAnalyses.filter((c) => c.detectedRole === 'quantitative')
-  const catCols = columnAnalyses.filter((c) => c.detectedRole === 'categorical' || c.detectedRole === 'temporal')
-  const effectiveRowCount = effectiveData.length
+  const catCols = columnAnalyses.filter((c) => c.detectedRole === 'categorical')
+  const tempCols = columnAnalyses.filter((c) => c.detectedRole === 'temporal')
+  const effectiveRowCount = effectiveRows.length
 
   let isSuitableForVisualization = true
   let unsuitabilityReason: string | undefined = undefined
@@ -227,8 +197,8 @@ export function analyzeSheet(
   } else if (quantCols.length === 0) {
     isSuitableForVisualization = false
     unsuitabilityReason = 'No quantitative/numeric columns were found. Charts require at least one numeric metric to plot.'
-  } else if (catCols.length === 0 && effectiveRowCount > 1) {
-    // If only quantitative columns exist, it can still plot an index/scatter, but if row count is too small it's limited
+  } else if (catCols.length === 0 && tempCols.length === 0 && effectiveRowCount > 1) {
+    // If only quantitative columns exist, it can still plot an index/scatter
     if (quantCols.length < 2) {
       isSuitableForVisualization = false
       unsuitabilityReason = 'At least one categorical or temporal dimension (or two quantitative metrics for correlation) is required.'
@@ -256,9 +226,9 @@ export function analyzeSheet(
     sheetName,
     rowCount: effectiveRowCount,
     colCount,
-    columns: columnAnalyses,
     hasSummaryRow,
     summaryRowIndex,
+    columns: columnAnalyses,
     suggestedInsights,
     isSuitableForVisualization,
     unsuitabilityReason,
@@ -269,7 +239,7 @@ export function analyzeSheet(
 export function analyzeWorkbook(
   title: string,
   sheets: Array<{ name: string; columns: Array<{ title: string; type?: string }>; data: Array<Array<unknown>> }>,
-  activeSheetIndex = 0
+  activeSheetIndex: number = 0
 ): WorkbookAnalysisResult {
   const sheetAnalyses = sheets.map((s) => analyzeSheet(s.name, s.columns, s.data))
   const activeSheet = sheetAnalyses[activeSheetIndex] || sheetAnalyses[0]
@@ -281,7 +251,7 @@ export function analyzeWorkbook(
   const metricColumns = activeSheet?.columns.filter((c) => c.detectedRole === 'quantitative').map((c) => c.title) || []
 
   return {
-    title,
+    title: title || 'Spreadsheet',
     sheets: sheetAnalyses,
     activeSheet,
     primaryDateColumn,

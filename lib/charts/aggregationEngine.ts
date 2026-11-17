@@ -1,6 +1,11 @@
 import type { EChartsOption } from 'echarts'
 import { ChartRecommendation, ProcessedChartData } from './types'
-import { parseNumericValue, isSummaryRow } from './analysisEngine'
+import { isSummaryRow } from './analysisEngine'
+import {
+  parseNumericValue,
+  evaluateGridFormulas,
+  findBestColumnIndex,
+} from './formulaEvaluator'
 
 export const METRON_PALETTE = [
   '#107C41', // Metron Forest Green
@@ -17,7 +22,7 @@ export const METRON_PALETTE = [
 
 // Determine unit prefix/suffix from column title
 function detectUnit(title: string): { prefix: string; suffix: string } {
-  const t = title.toLowerCase()
+  const t = (title || '').toLowerCase()
   if (t.includes('rs.') || t.includes('rs ') || t.includes('(rs)')) return { prefix: 'Rs. ', suffix: '' }
   if (t.includes('$')) return { prefix: '$', suffix: '' }
   if (t.includes('€')) return { prefix: '€', suffix: '' }
@@ -31,42 +36,95 @@ export function buildChartDataAndOption(
   columns: Array<{ title: string; type?: string }>,
   data: Array<Array<unknown>>
 ): ProcessedChartData {
-  const colIndexMap = new Map<string, number>()
-  columns.forEach((col, idx) => {
-    colIndexMap.set(col.title.toLowerCase().trim(), idx)
-  })
+  // 1. Evaluate formula cells in data so downstream aggregations operate on real numbers
+  const evaluatedData = evaluateGridFormulas(data)
 
-  // Exclude summary row if present
-  let effectiveData = data
-  if (data.length > 0 && isSummaryRow(data[data.length - 1])) {
-    effectiveData = data.slice(0, data.length - 1)
+  // 2. Exclude summary/total row from plotting if present at bottom
+  let effectiveData = evaluatedData
+  if (effectiveData.length > 1 && isSummaryRow(effectiveData[effectiveData.length - 1])) {
+    effectiveData = effectiveData.slice(0, effectiveData.length - 1)
   }
 
-  const xColTitle = recommendation.xAxisColumn
-  const xColIdx = colIndexMap.get(xColTitle.toLowerCase().trim()) ?? 0
+  // 3. Resolve Y (Metric) Columns with smart fuzzy matching
+  const requestedY = Array.isArray(recommendation.yAxisColumns) && recommendation.yAxisColumns.length > 0
+    ? recommendation.yAxisColumns
+    : ['Value']
 
-  const yColTitles = recommendation.yAxisColumns
-  const yColIndices = yColTitles.map((title) => ({
-    title,
-    idx: colIndexMap.get(title.toLowerCase().trim()) ?? -1,
-  })).filter((item) => item.idx !== -1)
+  const yColIndices: Array<{ title: string; idx: number }> = []
+  const usedYIndices = new Set<number>()
 
-  if (yColIndices.length === 0) {
-    // Fallback: pick first numeric column
-    const fallbackIdx = columns.findIndex((c, i) => i !== xColIdx && c.type === 'numeric')
-    if (fallbackIdx !== -1) {
-      yColIndices.push({ title: columns[fallbackIdx].title, idx: fallbackIdx })
+  for (const reqTitle of requestedY) {
+    const matchedIdx = findBestColumnIndex(reqTitle, columns, effectiveData, {
+      isQuantitative: true,
+      excludeIndices: usedYIndices,
+    })
+    if (matchedIdx !== -1) {
+      yColIndices.push({
+        title: columns[matchedIdx]?.title || reqTitle,
+        idx: matchedIdx,
+      })
+      usedYIndices.add(matchedIdx)
     }
   }
 
-  // 1. Group & Aggregate Data
+  // Fallback: If no Y columns matched, find the best quantitative columns in data
+  if (yColIndices.length === 0) {
+    const fallbackIdx = findBestColumnIndex('', columns, effectiveData, {
+      isQuantitative: true,
+    })
+    if (fallbackIdx !== -1) {
+      yColIndices.push({
+        title: columns[fallbackIdx]?.title || 'Metric',
+        idx: fallbackIdx,
+      })
+      usedYIndices.add(fallbackIdx)
+    }
+  }
+
+  // Final fallback: any column with numbers
+  if (yColIndices.length === 0) {
+    for (let c = 0; c < columns.length; c++) {
+      let numCount = 0
+      for (const row of effectiveData) {
+        if (Array.isArray(row) && parseNumericValue(row[c]) !== null) numCount++
+      }
+      if (numCount > 0) {
+        yColIndices.push({ title: columns[c]?.title || `Column ${c + 1}`, idx: c })
+        usedYIndices.add(c)
+        break
+      }
+    }
+  }
+
+  // 4. Resolve X (Dimension) Column with smart fuzzy matching
+  const isTemporal = recommendation.chartType === 'line' || recommendation.chartType === 'area'
+  let xColIdx = findBestColumnIndex(recommendation.xAxisColumn, columns, effectiveData, {
+    isTemporal,
+    isCategorical: true,
+    excludeIndices: usedYIndices,
+  })
+
+  // Fallback: find any column not used as Y
+  if (xColIdx === -1) {
+    for (let c = 0; c < columns.length; c++) {
+      if (!usedYIndices.has(c)) {
+        xColIdx = c
+        break
+      }
+    }
+    if (xColIdx === -1) xColIdx = 0
+  }
+
+  const xColTitle = columns[xColIdx]?.title || recommendation.xAxisColumn || 'Category'
+
+  // 5. Aggregate Data
   const { chartType, aggregation } = recommendation
 
   let categories: string[] = []
   const seriesDataMap = new Map<string, number[]>()
   yColIndices.forEach((y) => seriesDataMap.set(y.title, []))
 
-  // Pie chart aggregation (single metric vs category)
+  // ── Pie chart aggregation (single metric vs category) ──────────────────────
   if (chartType === 'pie') {
     const primaryY = yColIndices[0]
     const grouped = new Map<string, { sum: number; count: number }>()
@@ -74,6 +132,8 @@ export function buildChartDataAndOption(
     effectiveData.forEach((row) => {
       if (!Array.isArray(row)) return
       const catVal = String(row[xColIdx] ?? 'Uncategorized').trim()
+      if (!catVal) return
+
       const rawVal = primaryY ? row[primaryY.idx] : null
       const numVal = parseNumericValue(rawVal) ?? 0
 
@@ -83,25 +143,36 @@ export function buildChartDataAndOption(
       grouped.set(catVal, curr)
     })
 
-    // Take top 8 categories, group rest as "Other"
+    // Check if all sums are 0; if so, fallback to counting items per category
+    const totalSum = Array.from(grouped.values()).reduce((acc, v) => acc + Math.abs(v.sum), 0)
+    const useCount = totalSum === 0 || aggregation === 'count'
+
+    // Sort categories descending by value
     const sortedEntries = Array.from(grouped.entries())
       .filter(([cat]) => cat !== '')
-      .sort((a, b) => b[1].sum - a[1].sum)
+      .sort((a, b) => (useCount ? b[1].count - a[1].count : b[1].sum - a[1].sum))
 
     const pieData: Array<{ name: string; value: number }> = []
-    let otherSum = 0
+    let otherVal = 0
 
     sortedEntries.forEach(([cat, stats], idx) => {
-      const val = aggregation === 'average' && stats.count > 0 ? parseFloat((stats.sum / stats.count).toFixed(2)) : parseFloat(stats.sum.toFixed(2))
+      let val = useCount
+        ? stats.count
+        : aggregation === 'average' && stats.count > 0
+        ? parseFloat((stats.sum / stats.count).toFixed(2))
+        : parseFloat(stats.sum.toFixed(2))
+
+      val = Math.max(0, val) // Pie charts require non-negative values
+
       if (idx < 7) {
         pieData.push({ name: cat, value: val })
       } else {
-        otherSum += val
+        otherVal += val
       }
     })
 
-    if (otherSum > 0) {
-      pieData.push({ name: 'Other', value: parseFloat(otherSum.toFixed(2)) })
+    if (otherVal > 0) {
+      pieData.push({ name: 'Other', value: parseFloat(otherVal.toFixed(2)) })
     }
 
     const unit = primaryY ? detectUnit(primaryY.title) : { prefix: '', suffix: '' }
@@ -121,7 +192,7 @@ export function buildChartDataAndOption(
           const valFormatted = `${unit.prefix}${params.value?.toLocaleString()}${unit.suffix}`
           return `<div style="font-family: inherit; font-size: 12px;">
             <strong>${params.name}</strong><br/>
-            ${params.marker} Value: <strong>${valFormatted}</strong> (${params.percent}%)
+            ${params.marker} ${primaryY ? primaryY.title : 'Value'}: <strong>${valFormatted}</strong> (${params.percent}%)
           </div>`
         },
       },
@@ -138,7 +209,7 @@ export function buildChartDataAndOption(
           name: primaryY ? primaryY.title : 'Value',
           type: 'pie',
           radius: recommendation.options?.donut ? ['42%', '72%'] : '65%',
-          center: ['50%', '52%'],
+          center: ['50%', '50%'],
           avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: recommendation.options?.donut ? 6 : 4,
@@ -167,7 +238,7 @@ export function buildChartDataAndOption(
     }
   }
 
-  // Scatter chart (X metric vs Y metric)
+  // ── Scatter chart (X metric vs Y metric) ──────────────────────────────────
   if (chartType === 'scatter') {
     const primaryY = yColIndices[0]
     const scatterPoints: Array<[number, number]> = []
@@ -204,10 +275,10 @@ export function buildChartDataAndOption(
         },
       },
       grid: {
-        top: '20%',
+        top: '18%',
         right: '6%',
         bottom: '15%',
-        left: '10%',
+        left: '8%',
         containLabel: true,
       },
       xAxis: {
@@ -241,22 +312,32 @@ export function buildChartDataAndOption(
     }
   }
 
-  // Bar, Line, or Area Chart Aggregation
+  // ── Bar, Line, or Area Chart Aggregation ──────────────────────────────────
   if (aggregation === 'none') {
-    // Use raw rows
-    categories = effectiveData.map((row) => (Array.isArray(row) ? String(row[xColIdx] ?? '') : ''))
+    // Direct row-by-row plotting without grouping
+    categories = effectiveData.map((row, idx) => {
+      if (!Array.isArray(row)) return `Row ${idx + 1}`
+      const val = row[xColIdx]
+      return val !== null && val !== undefined && String(val).trim() !== ''
+        ? String(val).trim()
+        : `Row ${idx + 1}`
+    })
+
     yColIndices.forEach((y) => {
-      const vals = effectiveData.map((row) => (Array.isArray(row) ? parseNumericValue(row[y.idx]) ?? 0 : 0))
+      const vals = effectiveData.map((row) => {
+        if (!Array.isArray(row)) return 0
+        return parseNumericValue(row[y.idx]) ?? 0
+      })
       seriesDataMap.set(y.title, vals)
     })
   } else {
     // Group by X dimension
     const groupedMap = new Map<string, Map<string, { sum: number; count: number; min: number; max: number }>>()
 
-    effectiveData.forEach((row) => {
+    effectiveData.forEach((row, idx) => {
       if (!Array.isArray(row)) return
-      const catVal = String(row[xColIdx] ?? 'Uncategorized').trim()
-      if (!catVal) return
+      let catVal = String(row[xColIdx] ?? '').trim()
+      if (!catVal) catVal = `Item ${idx + 1}`
 
       if (!groupedMap.has(catVal)) {
         groupedMap.set(catVal, new Map())
@@ -276,8 +357,8 @@ export function buildChartDataAndOption(
 
     categories = Array.from(groupedMap.keys())
 
-    // Limit categories if too many (keep first 20 or top 20 by first metric)
-    if (categories.length > 25 && chartType === 'bar') {
+    // If too many categories in a bar chart, sort by first metric and take top 20
+    if (categories.length > 25 && chartType === 'bar' && yColIndices.length > 0) {
       const primaryMetric = yColIndices[0].title
       categories.sort((a, b) => {
         const valA = groupedMap.get(a)?.get(primaryMetric)?.sum ?? 0
@@ -287,7 +368,7 @@ export function buildChartDataAndOption(
       categories = categories.slice(0, 20)
     }
 
-    // Populate series
+    // Populate series values
     yColIndices.forEach((y) => {
       const seriesVals = categories.map((cat) => {
         const stats = groupedMap.get(cat)?.get(y.title)
@@ -302,8 +383,16 @@ export function buildChartDataAndOption(
     })
   }
 
-  // Construct series configurations
-  const isHorizontal = recommendation.options?.horizontal && chartType === 'bar'
+  // Fallback check: if categories are empty, create default indices
+  if (categories.length === 0) {
+    categories = effectiveData.map((_, i) => `Point ${i + 1}`)
+    yColIndices.forEach((y) => {
+      seriesDataMap.set(y.title, effectiveData.map((r) => parseNumericValue(Array.isArray(r) ? r[y.idx] : null) ?? 0))
+    })
+  }
+
+  // 6. Build series configurations
+  const isHorizontal = Boolean(recommendation.options?.horizontal && chartType === 'bar')
   const isArea = chartType === 'area'
   const actualChartType = isArea ? 'line' : chartType
 
@@ -321,7 +410,7 @@ export function buildChartDataAndOption(
 
     if (actualChartType === 'line') {
       baseSeries.smooth = recommendation.options?.smooth ?? true
-      baseSeries.showSymbol = categories.length <= 30
+      baseSeries.showSymbol = categories.length <= 35
       baseSeries.symbolSize = 6
       if (isArea) {
         baseSeries.areaStyle = {
@@ -354,17 +443,17 @@ export function buildChartDataAndOption(
     return baseSeries
   })
 
-  // Determine tooltip unit
+  // 7. Axes & Layout
   const primaryUnit = yColIndices[0] ? detectUnit(yColIndices[0].title) : { prefix: '', suffix: '' }
 
   const categoryAxis = {
     type: 'category' as const,
     data: categories,
     axisLabel: {
-      rotate: categories.length > 8 && !isHorizontal ? 35 : 0,
+      rotate: categories.length > 7 && !isHorizontal ? 30 : 0,
       fontSize: 11,
       color: '#475569',
-      formatter: (val: string) => (val.length > 18 ? `${val.substring(0, 16)}...` : val),
+      formatter: (val: string) => (val && val.length > 20 ? `${val.substring(0, 18)}…` : val),
     },
     axisTick: { alignWithLabel: true },
     splitLine: { show: false },
@@ -399,7 +488,9 @@ export function buildChartDataAndOption(
         const header = `<strong>${params[0].axisValueLabel}</strong><br/>`
         const lines = params.map((p: any) => {
           const u = detectUnit(p.seriesName)
-          const formatted = `${u.prefix}${p.value?.toLocaleString()}${u.suffix}`
+          const formatted = typeof p.value === 'number'
+            ? `${u.prefix}${p.value.toLocaleString()}${u.suffix}`
+            : p.value
           return `${p.marker} ${p.seriesName}: <strong>${formatted}</strong>`
         })
         return `<div style="font-family: inherit; font-size: 12px; line-height: 1.5;">${header}${lines.join('<br/>')}</div>`
@@ -415,7 +506,7 @@ export function buildChartDataAndOption(
     grid: {
       top: 60,
       right: 20,
-      bottom: categories.length > 8 && !isHorizontal ? 60 : 35,
+      bottom: categories.length > 7 && !isHorizontal ? 65 : 35,
       left: 15,
       containLabel: true,
     },
