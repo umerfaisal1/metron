@@ -118,13 +118,10 @@ export default function ExcelSpreadsheet({
     })
   }, [sheetId, initialTitle, initialColumns, initialData, initialMetadata, initialCharts, setWorkbook])
 
-  // Total slides count: 1 spreadsheet slide + N chart slides (or +1 empty/loading slide)
-  const totalSlides = 1 + (charts.length > 0 ? charts.length : 1)
-
   const scrollToSlide = useCallback((index: number) => {
     const el = slideRefsRef.current[index]
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [])
 
@@ -141,7 +138,6 @@ export default function ExcelSpreadsheet({
             if (!isNaN(idx)) {
               setActiveSlide(idx)
               if (idx === 0) {
-                // When returning to spreadsheet slide, re-render hot to ensure proper sizing
                 setTimeout(() => {
                   hotInstanceRef.current?.render()
                 }, 50)
@@ -150,7 +146,7 @@ export default function ExcelSpreadsheet({
           }
         })
       },
-      { root: container, threshold: 0.55 }
+      { root: container, threshold: 0.5 }
     )
 
     const slides = container.querySelectorAll('[data-slide-index]')
@@ -292,7 +288,6 @@ export default function ExcelSpreadsheet({
     hotInstanceRef.current = hot
     updateSelectionState(0, 0)
 
-    // Resize observer to re-render grid on card resize
     const container = containerRef.current
     let ro: ResizeObserver | null = null
     if (container && window.ResizeObserver) {
@@ -415,7 +410,6 @@ export default function ExcelSpreadsheet({
 
         if (Array.isArray(json.charts) && json.charts.length > 0) {
           setCharts(json.charts)
-          // Smooth scroll to the first newly generated chart slide
           setTimeout(() => scrollToSlide(1), 350)
         }
       } else {
@@ -568,11 +562,11 @@ export default function ExcelSpreadsheet({
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#F2F1ED] text-[#242424] font-sans select-none">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#ECEAE5] text-[#242424] font-sans select-none">
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportFile} className="hidden" />
 
       {/* ── 1. TOP HEADER (GAMMA / METRON WORKSPACE) ─────────────────────── */}
-      <header className="h-11 bg-white border-b border-zinc-200/90 px-4 flex items-center justify-between text-xs shadow-2xs z-30 flex-shrink-0">
+      <header className="h-11 bg-white border-b border-zinc-200/90 px-4 sm:px-6 flex items-center justify-between text-xs shadow-2xs z-30 flex-shrink-0">
         {/* Left: Back to Dashboard & Document Title */}
         <div className="flex items-center gap-3 min-w-0">
           <Link
@@ -633,7 +627,7 @@ export default function ExcelSpreadsheet({
           <button
             type="button"
             onClick={() => scrollToSlide(0)}
-            className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+            className={`px-2.5 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
               activeSlide === 0
                 ? 'bg-white text-[#107C41] shadow-2xs font-bold'
                 : 'text-zinc-500 hover:text-zinc-900'
@@ -772,7 +766,7 @@ export default function ExcelSpreadsheet({
       )}
 
       {/* ── 2. RIBBON TABS ────────────────────────────────────────────────── */}
-      <div className="bg-white/80 backdrop-blur-xs border-b border-zinc-200/80 px-4 pt-1 flex items-center gap-1 text-xs font-medium z-20 flex-shrink-0">
+      <div className="bg-white/80 backdrop-blur-xs border-b border-zinc-200/80 px-4 sm:px-6 pt-1 flex items-center gap-1 text-xs font-medium z-20 flex-shrink-0">
         {(['home', 'ai', 'insert', 'formulas'] as const).map((tab) => (
           <button
             key={tab}
@@ -798,7 +792,7 @@ export default function ExcelSpreadsheet({
       </div>
 
       {/* ── 3. RIBBON ACTION TOOLBAR ──────────────────────────────────────── */}
-      <div className="bg-[#FAF9F7] border-b border-zinc-200/80 px-4 py-1.5 min-h-[48px] flex items-center gap-4 text-xs z-20 flex-shrink-0 overflow-x-auto">
+      <div className="bg-[#FAF9F7] border-b border-zinc-200/80 px-4 sm:px-6 py-1.5 min-h-[48px] flex items-center gap-4 text-xs z-20 flex-shrink-0 overflow-x-auto">
         {/* Home */}
         {activeTab === 'home' && (
           <div className="flex items-center gap-3">
@@ -1009,14 +1003,14 @@ export default function ExcelSpreadsheet({
 
       {/* ── 4. SLIDES CANVAS (GAMMA PRESENTATION VIEWPORT) ────────────────── */}
       {/*
-        The canvas has warm stone presentation background.
-        Each slide is a centered card with rounded-2xl/3xl and shadow-xl.
-        Vertical scroll snap: snap-y mandatory
+        Warm presentation canvas background (#ECEAE5).
+        Generous vertical padding (py-10 md:py-16) and spacious gap between slides (space-y-16 md:space-y-24).
+        Slides are widescreen (w-[94%] max-w-[1360px] 2xl:max-w-[1480px]).
       */}
       <div
         ref={slidesContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden bg-[#F2F1ED]"
-        style={{ scrollSnapType: 'y mandatory' }}
+        className="flex-1 overflow-y-auto overflow-x-hidden bg-[#ECEAE5] py-8 sm:py-12 md:py-16 space-y-14 sm:space-y-20 md:space-y-24"
+        style={{ scrollSnapType: 'y proximity' }}
       >
         {/* ── SLIDE 0: SPREADSHEET SLIDE CARD ─────────────────────────────── */}
         <section
@@ -1024,28 +1018,28 @@ export default function ExcelSpreadsheet({
             slideRefsRef.current[0] = el
           }}
           data-slide-index={0}
-          className="w-full h-full flex items-center justify-center p-3 sm:p-6 md:p-8 shrink-0"
-          style={{ height: '100%', scrollSnapAlign: 'start' }}
+          className="w-full flex flex-col items-center justify-center scroll-mt-6"
+          style={{ scrollSnapAlign: 'center' }}
         >
           {/* Gamma Presentation Slide Card Container */}
-          <div className="w-full max-w-5xl h-[86vh] max-h-[820px] min-h-[500px] bg-white rounded-2xl sm:rounded-3xl shadow-xl shadow-zinc-900/8 border border-zinc-200/90 flex flex-col overflow-hidden relative ring-1 ring-black/[0.04] transition-all">
+          <div className="w-[94%] max-w-[1360px] 2xl:max-w-[1480px] h-[82vh] min-h-[560px] max-h-[860px] bg-white rounded-2xl sm:rounded-3xl shadow-2xl shadow-zinc-900/10 border border-zinc-200/90 flex flex-col overflow-hidden relative ring-1 ring-black/[0.04] transition-all">
             {/* Slide Card Header */}
-            <div className="px-6 py-3.5 bg-[#FAF9F7] border-b border-zinc-200/80 flex items-center justify-between gap-4 flex-shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full bg-zinc-200/80 text-zinc-700 font-mono flex-shrink-0">
+            <div className="px-6 sm:px-8 py-4 bg-[#FAF9F7] border-b border-zinc-200/80 flex items-center justify-between gap-4 flex-shrink-0">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <span className="text-[11px] font-bold tracking-wider uppercase px-3 py-1 rounded-full bg-zinc-200/90 text-zinc-800 font-mono flex-shrink-0">
                   Slide 1
                 </span>
                 <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md border border-emerald-200 bg-emerald-50 text-[#107C41] flex-shrink-0">
                   Spreadsheet
                 </span>
-                <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight leading-snug truncate max-w-md">
+                <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight leading-snug truncate max-w-xl xl:max-w-2xl">
                   {title || 'Spreadsheet Dataset'}
                 </h2>
               </div>
 
               {/* Card Header Right: stats + next slide button */}
               <div className="flex items-center gap-3 flex-shrink-0">
-                <span className="text-[11px] text-zinc-400 font-mono hidden sm:inline">
+                <span className="text-[11px] text-zinc-500 font-mono hidden sm:inline">
                   {gridData.length} rows • {columns.length} columns
                 </span>
 
@@ -1053,7 +1047,7 @@ export default function ExcelSpreadsheet({
                   <button
                     type="button"
                     onClick={() => scrollToSlide(1)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-zinc-200 text-[#107C41] hover:bg-emerald-50 font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-zinc-200 text-[#107C41] hover:bg-emerald-50 font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
                   >
                     <span>View Charts</span>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1065,7 +1059,7 @@ export default function ExcelSpreadsheet({
                     type="button"
                     onClick={handleGenerateCharts}
                     disabled={isGeneratingCharts}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#107C41] hover:bg-[#0D6234] text-white font-semibold text-xs transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#107C41] hover:bg-[#0D6234] text-white font-semibold text-xs transition-all cursor-pointer shadow-2xs disabled:opacity-50"
                   >
                     <svg className="w-3.5 h-3.5 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -1077,7 +1071,7 @@ export default function ExcelSpreadsheet({
             </div>
 
             {/* Embedded Formula Bar inside the Spreadsheet Slide Card */}
-            <div className="h-8 bg-white border-b border-zinc-200/80 px-4 flex items-center gap-2 text-xs flex-shrink-0">
+            <div className="h-8 bg-white border-b border-zinc-200/80 px-4 sm:px-6 flex items-center gap-2 text-xs flex-shrink-0">
               <div className="w-14 h-6 px-2 bg-zinc-50 border border-zinc-200 rounded flex items-center justify-center font-mono font-bold text-zinc-800 text-[11px]">
                 {activeCellAddress}
               </div>
@@ -1132,7 +1126,7 @@ export default function ExcelSpreadsheet({
             </div>
 
             {/* Slide Card Bottom Footer: Tabs & Selection Stats */}
-            <div className="h-8 bg-[#FAF9F7] border-t border-zinc-200/80 px-4 flex items-center justify-between text-[11px] text-zinc-600 flex-shrink-0">
+            <div className="h-8 bg-[#FAF9F7] border-t border-zinc-200/80 px-4 sm:px-6 flex items-center justify-between text-[11px] text-zinc-600 flex-shrink-0">
               <div className="flex items-center gap-1.5">
                 <div
                   className="flex items-center px-3 py-1 bg-white border border-zinc-200/80 border-b-0 rounded-t text-[#107C41] font-bold shadow-2xs select-none"
@@ -1180,7 +1174,8 @@ export default function ExcelSpreadsheet({
               slideRefsRef.current[i + 1] = el
             }}
             data-slide-index={i + 1}
-            style={{ height: '100%', scrollSnapAlign: 'start' }}
+            className="w-full flex flex-col items-center justify-center scroll-mt-6"
+            style={{ scrollSnapAlign: 'center' }}
           >
             <ChartSlide
               chart={chart}
@@ -1201,16 +1196,16 @@ export default function ExcelSpreadsheet({
               slideRefsRef.current[1] = el
             }}
             data-slide-index={1}
-            className="w-full h-full flex items-center justify-center p-3 sm:p-6 md:p-8 shrink-0"
-            style={{ height: '100%', scrollSnapAlign: 'start' }}
+            className="w-full flex flex-col items-center justify-center scroll-mt-6"
+            style={{ scrollSnapAlign: 'center' }}
           >
-            <div className="w-full max-w-5xl h-[86vh] max-h-[820px] min-h-[500px] bg-white rounded-2xl sm:rounded-3xl shadow-xl shadow-zinc-900/8 border border-zinc-200/90 flex flex-col items-center justify-center p-8 text-center relative ring-1 ring-black/[0.04]">
+            <div className="w-[94%] max-w-[1360px] 2xl:max-w-[1480px] h-[82vh] min-h-[560px] max-h-[860px] bg-white rounded-2xl sm:rounded-3xl shadow-2xl shadow-zinc-900/10 border border-zinc-200/90 flex flex-col items-center justify-center p-8 text-center relative ring-1 ring-black/[0.04]">
               <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#107C41] mx-auto flex items-center justify-center mb-4 shadow-sm border border-emerald-100">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-600 font-mono mb-2">
+              <span className="text-[11px] font-bold tracking-wider uppercase px-3 py-1 rounded-full bg-zinc-100 text-zinc-600 font-mono mb-2">
                 Slide 2 • Visualizations
               </span>
               <h3 className="text-xl font-bold text-zinc-900 tracking-tight mb-2">
@@ -1236,10 +1231,10 @@ export default function ExcelSpreadsheet({
         {/* ── LOADING SLIDE STATE ─────────────────────────────────────────── */}
         {isGeneratingCharts && (
           <section
-            className="w-full h-full flex items-center justify-center p-3 sm:p-6 md:p-8 shrink-0"
-            style={{ height: '100%', scrollSnapAlign: 'start' }}
+            className="w-full flex flex-col items-center justify-center scroll-mt-6"
+            style={{ scrollSnapAlign: 'center' }}
           >
-            <div className="w-full max-w-5xl h-[86vh] max-h-[820px] min-h-[500px] bg-white rounded-2xl sm:rounded-3xl shadow-xl shadow-zinc-900/8 border border-zinc-200/90 flex flex-col items-center justify-center p-8 text-center ring-1 ring-black/[0.04]">
+            <div className="w-[94%] max-w-[1360px] 2xl:max-w-[1480px] h-[82vh] min-h-[560px] max-h-[860px] bg-white rounded-2xl sm:rounded-3xl shadow-2xl shadow-zinc-900/10 border border-zinc-200/90 flex flex-col items-center justify-center p-8 text-center ring-1 ring-black/[0.04]">
               <div className="w-14 h-14 rounded-full border-4 border-emerald-100 border-t-[#107C41] animate-spin mb-4" />
               <h3 className="text-base font-bold text-zinc-900 mb-1">
                 Metron Agent is Building Slides…
@@ -1253,13 +1248,13 @@ export default function ExcelSpreadsheet({
       </div>
 
       {/* ── 5. FLOATING SLIDE DOCK (GAMMA STYLE FLOATING PILL) ─────────────── */}
-      <div className="fixed right-5 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-40 bg-white/90 backdrop-blur-md p-2 rounded-2xl shadow-lg border border-zinc-200/80 ring-1 ring-black/5">
+      <div className="fixed right-5 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2.5 z-40 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-xl border border-zinc-200/80 ring-1 ring-black/5">
         <button
           type="button"
           onClick={() => scrollToSlide(0)}
-          className={`w-3 h-3 rounded-full transition-all cursor-pointer ${
+          className={`w-3.5 h-3.5 rounded-full transition-all cursor-pointer ${
             activeSlide === 0
-              ? 'bg-[#107C41] scale-125 ring-2 ring-emerald-200'
+              ? 'bg-[#107C41] scale-125 ring-2 ring-emerald-300 shadow-xs'
               : 'bg-zinc-300 hover:bg-zinc-400'
           }`}
           title="Slide 1: Spreadsheet"
@@ -1270,9 +1265,9 @@ export default function ExcelSpreadsheet({
             key={i}
             type="button"
             onClick={() => scrollToSlide(i + 1)}
-            className={`w-3 h-3 rounded-full transition-all cursor-pointer ${
+            className={`w-3.5 h-3.5 rounded-full transition-all cursor-pointer ${
               activeSlide === i + 1
-                ? 'bg-[#107C41] scale-125 ring-2 ring-emerald-200'
+                ? 'bg-[#107C41] scale-125 ring-2 ring-emerald-300 shadow-xs'
                 : 'bg-zinc-300 hover:bg-zinc-400'
             }`}
             title={`Slide ${i + 2}: Chart ${i + 1}`}
@@ -1283,9 +1278,9 @@ export default function ExcelSpreadsheet({
           <button
             type="button"
             onClick={() => scrollToSlide(1)}
-            className={`w-3 h-3 rounded-full transition-all cursor-pointer ${
+            className={`w-3.5 h-3.5 rounded-full transition-all cursor-pointer ${
               activeSlide === 1
-                ? 'bg-[#107C41] scale-125 ring-2 ring-emerald-200'
+                ? 'bg-[#107C41] scale-125 ring-2 ring-emerald-300 shadow-xs'
                 : 'bg-zinc-300 hover:bg-zinc-400'
             }`}
             title="Slide 2: Charts Placeholder"

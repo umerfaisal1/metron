@@ -42,7 +42,6 @@ export default function ChartSlide({
   }, [chart.echartsOption])
 
   useEffect(() => {
-    // Slight delay so the slide layout is computed before init
     const t = setTimeout(initOrUpdateChart, 60)
     const container = chartContainerRef.current
     let ro: ResizeObserver | null = null
@@ -78,14 +77,14 @@ export default function ChartSlide({
   }
 
   return (
-    <div className="w-full h-full flex items-center justify-center p-3 sm:p-6 md:p-8">
-      {/* Gamma-style Presentation Slide Card */}
-      <div className="w-full max-w-5xl h-[86vh] max-h-[820px] min-h-[500px] bg-white rounded-2xl sm:rounded-3xl shadow-xl shadow-zinc-900/8 border border-zinc-200/90 flex flex-col overflow-hidden relative ring-1 ring-black/[0.04] transition-all">
+    <div className="w-full flex flex-col items-center justify-center">
+      {/* Gamma-style Widescreen Presentation Slide Card */}
+      <div className="w-[94%] max-w-[1360px] 2xl:max-w-[1480px] h-[82vh] min-h-[560px] max-h-[860px] bg-white rounded-2xl sm:rounded-3xl shadow-2xl shadow-zinc-900/10 border border-zinc-200/90 flex flex-col overflow-hidden relative ring-1 ring-black/[0.04] transition-all">
         {/* Slide Top Chrome / Header */}
-        <div className="px-6 py-4 bg-[#FAF9F7] border-b border-zinc-200/80 flex items-center justify-between gap-4 flex-shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="px-6 sm:px-8 py-4 bg-[#FAF9F7] border-b border-zinc-200/80 flex items-center justify-between gap-4 flex-shrink-0">
+          <div className="flex items-center gap-3.5 min-w-0">
             {/* Slide Index Badge */}
-            <span className="text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full bg-zinc-200/80 text-zinc-700 font-mono flex-shrink-0">
+            <span className="text-[11px] font-bold tracking-wider uppercase px-3 py-1 rounded-full bg-zinc-200/90 text-zinc-800 font-mono flex-shrink-0">
               Slide {index + 2}
             </span>
 
@@ -94,7 +93,7 @@ export default function ChartSlide({
             </span>
 
             <div className="min-w-0">
-              <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight leading-snug truncate max-w-md sm:max-w-xl">
+              <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight leading-snug truncate max-w-xl xl:max-w-3xl">
                 {recommendation.title}
               </h2>
             </div>
@@ -134,7 +133,7 @@ export default function ChartSlide({
 
         {/* AI Rationale Accordion */}
         {showExplanation && (
-          <div className="px-6 py-3 bg-[#F0F7F2] border-b border-[#C8E6D0] text-xs text-[#0D361C] flex items-start gap-2.5 flex-shrink-0 animate-in fade-in duration-150">
+          <div className="px-6 sm:px-8 py-3 bg-[#F0F7F2] border-b border-[#C8E6D0] text-xs text-[#0D361C] flex items-start gap-2.5 flex-shrink-0 animate-in fade-in duration-150">
             <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1 flex-shrink-0" />
             <div className="leading-relaxed">
               <strong className="font-semibold text-[#107C41]">AI Rationale: </strong>
@@ -145,7 +144,7 @@ export default function ChartSlide({
 
         {/* Executive Insight Banner (Slide 1 of Charts) */}
         {index === 0 && overallInsight && (
-          <div className="px-6 py-2.5 bg-gradient-to-r from-[#EAF5EE] to-[#E3F2E7] border-b border-[#CDE5D5] text-xs text-[#0D361C] flex items-center gap-3 flex-shrink-0">
+          <div className="px-6 sm:px-8 py-2.5 bg-gradient-to-r from-[#EAF5EE] to-[#E3F2E7] border-b border-[#CDE5D5] text-xs text-[#0D361C] flex items-center gap-3 flex-shrink-0">
             <div className="w-5 h-5 rounded-md bg-[#107C41] text-white flex items-center justify-center font-bold text-[9px] flex-shrink-0 shadow-2xs">
               AI
             </div>
@@ -158,18 +157,18 @@ export default function ChartSlide({
 
         {/* Description line if available */}
         {recommendation.description && (
-          <div className="px-6 pt-3 pb-1 text-xs text-zinc-500 flex-shrink-0">
+          <div className="px-6 sm:px-8 pt-3 pb-1 text-xs text-zinc-500 flex-shrink-0">
             {recommendation.description}
           </div>
         )}
 
         {/* ECharts Presentation Canvas Area */}
-        <div className="flex-1 w-full min-h-0 p-4 sm:p-6 bg-white relative">
+        <div className="flex-1 w-full min-h-0 p-4 sm:p-6 lg:p-8 bg-white relative">
           <div ref={chartContainerRef} className="w-full h-full" />
         </div>
 
         {/* Slide Footer */}
-        <div className="px-6 py-3 bg-[#FAF9F7] border-t border-zinc-200/80 flex items-center justify-between gap-4 text-xs text-zinc-500 flex-shrink-0">
+        <div className="px-6 sm:px-8 py-3.5 bg-[#FAF9F7] border-t border-zinc-200/80 flex items-center justify-between gap-4 text-xs text-zinc-500 flex-shrink-0">
           <div className="flex items-center gap-3 sm:gap-6 text-[11px] flex-wrap">
             <span>
               X-Axis:{' '}
@@ -185,7 +184,7 @@ export default function ChartSlide({
             {recommendation.aggregation !== 'none' && (
               <>
                 <span className="hidden sm:inline text-zinc-300">•</span>
-                <span className="capitalize text-zinc-500 font-mono text-[10px]">
+                <span className="capitalize text-zinc-600 font-mono text-[10px]">
                   {recommendation.aggregation}
                 </span>
               </>
@@ -201,7 +200,7 @@ export default function ChartSlide({
           </div>
 
           {/* Slide Arrow Navigation */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
               onClick={onScrollUp}
@@ -213,8 +212,8 @@ export default function ChartSlide({
               </svg>
             </button>
 
-            <span className="text-[11px] font-mono text-zinc-500 px-1">
-              {index + 1} / {total}
+            <span className="text-[11px] font-mono text-zinc-600 font-medium px-1">
+              {index + 2} / {total + 1}
             </span>
 
             {index < total - 1 ? (
