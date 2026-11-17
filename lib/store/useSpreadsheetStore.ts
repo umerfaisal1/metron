@@ -3,6 +3,7 @@ import { ColumnDef } from '@/components/spreadsheet/ExcelSpreadsheet'
 import { ProcessedChartData } from '@/lib/charts/types'
 import { buildChartDataAndOption } from '@/lib/charts/aggregationEngine'
 
+// ViewMode kept for type compatibility; the UI now uses slide-based scrolling instead
 export type ViewMode = 'spreadsheet' | 'charts' | 'split'
 
 interface SpreadsheetState {
